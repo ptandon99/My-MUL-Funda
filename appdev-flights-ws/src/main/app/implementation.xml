@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+    <flow name="getFlightsFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/flights" doc:name="HTTP"/>
+        <set-variable variableName="airlines" value="#[message.inboundProperties.'http.query.params'.airline]" doc:name="Set Airlines Variable"/>
+        <flow-ref name="setCode" doc:name="setCode"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.airlines == &quot;delta&quot;]">
+                <flow-ref name="getDetlaFlighFlow" doc:name="getDetlaFlighFlow"/>
+            </when>
+            <when expression="#[flowVars.airlines == &quot;united&quot;]">
+                <flow-ref name="getUnitedFlightsFlow" doc:name="getUnitedFlightsFlow"/>
+            </when>
+            <when expression="#[flowVars.airlines == &quot;american&quot;]">
+                <flow-ref name="getAmericanFlightsFlow" doc:name="getAmericanFlightsFlow"/>
+            </when>
+            <otherwise>
+                <flow-ref name="getAllAirlinesFlightsFlow" doc:name="getAllAirlinesFlightsFlow"/>
+            </otherwise>
+        </choice>
+
+        <logger level="INFO" doc:name="Logger"/>
+        
+   
+        
+        
+    </flow>
+    <sub-flow name="setCode">
+        <set-variable variableName="code" value="#[message.inboundProperties.'http.query.params'.code == empty? 'SFO': message.inboundProperties.'http.query.params'.code]" doc:name="Variable"/>
+    </sub-flow>
+   
+    
+    
+    <flow name="getUnitedFlightsFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/united" doc:name="HTTP"/>
+        <http:request config-ref="UNITED_HTTP_CONF" path="/essentials/united/flights/{destination}" method="GET" doc:name="Unitest REST Request">
+            <http:request-builder>
+                <http:uri-param paramName="destination" value="#[flowVars.code]"/>
+            </http:request-builder>
+        </http:request>
+        <dw:transform-message doc:name="Transform Message" metadata:id="e90a9dde-edf6-4b82-a39f-2f5429be1d05">
+            <dw:input-payload mimeType="application/json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	airlineName: payload.airline,
+	departureDate: payload.toAirportCode,
+	flightCode: payload.flightCode,
+	origination: payload.fromAirportCode
+} as :object {
+	class : "com.mulesoft.training.Flight"
+}]]></dw:set-payload>
+        </dw:transform-message>
+
+        <logger level="INFO" doc:name="Logger"/>
+    </flow>
+    
+    
+        <flow name="getAmericanFlightsFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/american" doc:name="HTTP" allowedMethods="GET"/>
+        <flow-ref name="setCode" doc:name="setCode"/>
+        <http:request config-ref="UNITED_HTTP_CONF" path="/essentials/american/{destination}" method="GET" doc:name="American REST Request">
+            <http:request-builder>
+                <http:uri-param paramName="destination" value="#[flowVars.code]"/>
+
+            </http:request-builder>
+        </http:request>
+        <dw:transform-message doc:name="Transform Message" metadata:id="5e48c858-d3a6-4704-b991-92f1219bfba0">
+            <dw:input-payload doc:sample="sample_data\json.json" mimeType="application/json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	airline: "American",
+	flightCode: payload01.planeType,
+	fromAirportCode: payload01.fromAirport,
+	toAirportCode: payload01.toAirport,
+	departureDate: payload01.takeOffDate,
+	emptySeats: payload01.seatsAvailable,
+	totalSeats: payload01.totalSeats,
+	price: payload01.price,
+	planeType: payload01.planeType
+})]]></dw:set-payload>
+        </dw:transform-message>
+
+        <logger level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="getDetlaFlighFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/delta" doc:name="HTTP"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://soap.training.mulesoft.com/
+---
+{
+	ns0#findFlight: {
+		destination: flowVars.code as :string
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <ws:consumer config-ref="delta_Web_Service_Consumer" operation="findFlight" doc:name="Web Service Consumer"/>
+
+        <logger level="INFO" doc:name="Logger"/>
+        
+      
+        
+        
+        
+    </flow>
+    <flow name="getAllAirlinesFlightsFlow">
+        <scatter-gather doc:name="Scatter-Gather">
+            <flow-ref name="getDetlaFlighFlow" doc:name="getDetlaFlighFlow"/>
+            <flow-ref name="getUnitedFlightsFlow" doc:name="getUnitedFlightsFlow"/>
+        </scatter-gather>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+flatten payload]]></dw:set-payload>
+        </dw:transform-message>
+        <logger level="INFO" doc:name="Logger"/>
+    </flow>
+    
+
+    
+    
+    
+
+</mule>
